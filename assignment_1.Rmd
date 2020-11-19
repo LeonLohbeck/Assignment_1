@@ -1,0 +1,569 @@
+---
+title: 'Problem Set 1: Linear Methods'
+author:
+  - author 1 (matriculation number)
+  - author 2 (matriculation number)
+date: '2020-11-13 till 2020-11-29'
+output:
+  pdf_document: default
+  html_notebook: default
+urlcolor: blue
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  #set comment formatting
+  comment = ">",
+  #collapse code and output
+  collapse = F
+)
+```
+
+___
+
+- You may answer this problem set in groups of two or three people. Please note your names and matriculation numbers in the `YAML` header of this notebook before submission (under `author`).
+
+- Please hand in your answers via GitHub until 29th November 2020, 12pm. Send your file repository (use one for your whole team) to [puchalla@wwu.de](mailto:marius.puchalla@wiwi.uni-muenster.de) by adding him as a collaborator to your repo (GitHub: *puchalla*). Please ensure that the whole notebook can be executed without error!
+
+- Make sure to answer all questions in this R Notebook, either using plain text or code chunks. Please also comment your code in a transparent manner.
+
+- For several exercises throughout the assignment you may find hints and code snippets that should support you in solving the exercises. You may rely on these to answer the questions, but you don't have to. Any answer that solves the exercise is acceptable.
+
+___
+
+Before starting, leverage the `pacman` package using the code chunk below. This package is a convenient helper for installing and loading packages at the start of your project. It checks whether a package has already been installed and loads the package if available. Otherwise it installs the package autonomously. Use `pacman::p_load()` to install and load the following packages:
+
+- `tidyverse` (meta-package to load `dplyr`, `ggplot2`, and co.),
+- `GLMsData` (contains the data set for *Task 1*),
+- `ISLR` (contains the data set for *Task 3*),
+- `rsample` (functions for data partitioning and resampling),
+- `boot` (functions for bootstrapping),
+- `MASS` (functions for discriminant analysis),
+- `class` (functions for k-NN),
+- `glmnet` (functions for regularized regression),
+- `leaps` (functions for stepwise subset selection),
+- `yardstick` (functions for evaluating model performance).
+
+```{r packages, message=F}
+# check if pacman is installed (install if evaluates to FALSE)
+if (!require("pacman")) install.packages("pacman")
+# load (or install if pacman cannot find an existing installation) the relevant packages
+pacman::p_load(
+  tidyverse, GLMsData, ISLR, rsample, boot, MASS, class, glmnet, leaps, yardstick
+)
+```
+
+In case you need any further help with the above mentioned packages and included functions, use the `help()` function build into RStudio (e.g., by running `help(rsample)`).
+
+\pagebreak
+
+# Task 1: Multiple Linear Regression
+
+This task deals with modeling lung capacity. You will use the data set `lungcap` (part of the `GLMsData` package) which provides information on body variables and smoking habits for a sample of 654 youths, aged between 3 and 19, in the area of East Boston during the middle to late 1970s. First, use the subsequent code to load the data and convert the `Smoke` variable from `int` to `fct`.
+
+```{r}
+data("lungcap", package = "GLMsData")
+
+lungcap <- lungcap %>% 
+  tibble::as_tibble() %>% 
+  dplyr::mutate(across(Smoke, as.factor))
+
+lungcap
+```
+
+You will predict forced expiratory volume (`FEV`), a measure of lung capacity. For each person in the data set you have measurements of the following variables:
+
+- `FEV`: forced expiratory volume in liters, a measure of lung capacity (type `dbl`),
+- `Age`: the age of the subject in completed years (type `int`),
+- `Ht`: the height in inches (type `dbl`),
+- `Gender`: the gender of the subjects, a factor (`fct`) with levels `F` (female) and `M` (male),
+- `Smoke`: the smoking status of the subject, a factor (`fct`) with levels `0` (non-smoker) and `1` (smoker).
+
+For better interpretability, transform the height from inches to cm (one inch corresponds to 2.54cm). Then fit a multiple linear regression model to the data with `log(FEV)` as response and the other variables as predictors and call the fitted model `lung_model`.
+
+```{r}
+lungcap <- lungcap %>% 
+  dplyr::mutate(across(Ht, ~ . * 2.54)) %>% 
+  dplyr::rename(Htcm = Ht)
+
+lung_model <- lungcap %>% 
+  lm(log(FEV) ~ Age + Htcm + Gender + Smoke, data = .)
+
+summary(lung_model)
+```
+
+
+### Task 1.1
+
+Write down the generic linear regression equation as well as the specific equation for the fitted `lung_model` including the point estimates for the coefficients.
+
+
+### Task 1.2
+
+Why is `log(FEV)` used as the response instead of `FEV`? To answer this question, plot `FEV` and `log(FEV)` using the `geom_density()` function as part of your `ggplot2` pipeline. What shape do you observe?
+
+
+### Task 1.3
+
+Explain with your own words and numerical examples what the following statistics in the `summary(lung_model)` output mean. 
+
+i. *`Estimate`* \break
+Discuss one continuous and one dummy predictor  on the log as well as on the original scale of `FEV` (i.e. after reversing the log-transformation).
+ii. *`Std. Error`* \break
+Discuss the statistic based on the `Age` and `Htmc` predictor. Also explain how a 95% confidence interval can be constructed.
+iii. *`Residual standard error`*
+iv. *`F-statistic`*
+
+
+### Task 1.4
+
+What is the proportion of variability explained by the fitted `lung_model`?
+
+
+### Task 1.5
+
+The `summary()` output also reports the two statistics `t value` and `Pr(>|t|)` for each coefficient. Briefly explain the hypothesis test that is underlying the t-statistic.
+
+
+### Task 1.6
+
+Consider a 14-year-old male. He is 175cm tall and does not smoke. What is your best guess for his `log(FEV)`? Construct a 95% prediction interval for his forced expiratory volume `FEV` (remember to inverse the logarithm). Please comment on whether you find this prediction interval useful.
+
+
+### Task 1.7
+
+Redo the multiple linear regression, but add an interaction term between `Age` and `Smoke` and print the results. What is the meaning of the estimate for the interaction term? Is the interaction term statistically significant? What is the effect of the inclusion of the interaction term on the statistical significance of `Smoke` and `Age`?
+
+
+\pagebreak
+
+# Task 2: Classification (Logit/LDA/k-NN)
+
+In this task, you will work with data from the four major tennis tournaments in 2013 (both men and women), published in the [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/datasets/Tennis+Major+Tournament+Match+Statistics). Download the `tennisdata.csv` from the Learnweb course and import the data using the `readr` package (if you do not place the file into the same folder as this `.Rmd`-file you may have to adjust the path). Further, the `Result` column is formatted as a factor.
+
+```{r, message=F}
+tennis <- readr::read_csv(file = "./tennisdata.csv") %>% 
+  dplyr::mutate(across(Result, as.factor))
+
+tennis
+```
+Our goal is to predict the outcome of a match (success or failure of player 1) using the quality statistics `x1` from player 1 and `x2` from player 2.
+
+___
+
+**Excursus:** These quality statistics are calculated specifically for each match as follows [not directly relevant for the task, only to avoid the impression that they are “random numbers”]:
+
+Each row in the original data set contains information about one match. The variables that end with `.1` relate to player 1, while `.2` concerns player 2. In tennis, you have two attempts at the serve. You lose the point if you fail both. The number of these double faults committed is given in the variable `DBF`, while the variable `ACE` is the number of times your opponent fails to return your serve. Similarly, unforced errors (mistakes that are supposedly not forced by good shots of your opponent) are called `UFE`. A skilled player will score many aces while committing few double faults and unforced errors.
+
+Each match involves two players, and there are no draws in tennis. The result of a match is either that
+
+- player 1 wins, coded as 1 (so, success of player 1) or that
+- player 2 wins, coded as 0 (so, failure of player 1).
+
+For the two players, player 1 and player 2, the quality of player `c = 1, 2` can be summarized as
+$$ x_{c}=ACE_{c}-UFE_{c}-DBF_{c} $$
+
+___
+
+The following code chunk computes the quality scores and stores them in a `tibble` together with the result (`y`) of each match (missing values are removed via `tidyr::drop_na()`).
+
+```{r}
+tennis <- tennis %>% 
+  dplyr::mutate(
+    x1 = ACE.1 - UFE.1 - DBF.1, 
+    x2 = ACE.2 - UFE.2 - DBF.2,
+    .before = Result
+  ) %>%
+  dplyr::select(Result, x1, x2) %>% 
+  dplyr::rename(y = Result) %>% 
+  tidyr::drop_na()
+
+tennis
+```
+
+*Note: A function named `select()` is part of the `MASS` as well as of the `dplyr` (i.e. `tidyverse`) package. Since you load the `tidyverse` prior to the `MASS` package, the `select()` function in `tidyverse` is overridden (masked) by the `MASS` package. In those cases, you may specify the namespace of the function prior to the function call to resolve ambiguity (like `dplyr::select()`).*
+
+Next, perform a 50:50 train-test split using the `rsample` package. First, split the data set into two equal parts using `initial_split()`. Second, extract the training and test set from the split object using `training()` and `testing()`.
+
+```{r}
+set.seed(2020)
+
+tennis_split <- tennis %>% 
+  rsample::initial_split(prop = 0.5)
+
+train_set_tn <- rsample::training(tennis_split)
+test_set_tn <- rsample::testing(tennis_split)
+```
+
+In the scatter plot that results from the following `R` code, the training (test) observations are shown as triangles (full circles). Matches won by player one (two) are displayed in dark orange (blue).
+
+```{r}
+ggplot2::ggplot() +
+  geom_point(data = train_set_tn, aes(x1, x2, color = y, shape = "Training set")) + 
+  geom_point(data = test_set_tn, aes(x1, x2, color = y, shape = "Test set")) + 
+  scale_color_manual(values = c("blue4", "darkorange1")) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+```
+
+You will now apply different classification methods to predict the match outcome and validate some of your results via k-fold cross-validation (CV).
+
+
+### Task 2.1
+
+Get a general overview of the data frame `tennis`. How many observations are there? What are the median values of `x1` and `x2`? Display the matrix of pairwise scatterplots and briefly comment on the relationship between `y` and `x1` respectively `y` and `x2`.
+
+*Hint: If you try to compute the median the `tidyverse`-way, remember that `summarise(across(...))` can operate on multiple variables if you feed `across` a vector of column names.*
+
+
+### Task 2.2
+
+Perform a logistic regression on the full data set and print the results using `summary()`. In addition, address the following questions:
+
+i. Are the estimated coefficients for `x1` and `x2` statistically significant?
+ii. Just by looking at the two coefficients: What is the effect on `y` if both `x1` and `x2` increase by one?
+iii. What is the effect on the odds of success for player 1 if `x1` increases by one?
+iv. In the first match, player 1 has a quality of -25 and player 2’s quality is -20. What is the value for the odds-ratio for the given prediction and how can it be interpreted? What is the predicted probability that player 1 wins this match? Did player 1 actually win the the match?
+
+
+### Task 2.3
+
+The *receiver operating characteristic* (*ROC*)-curve is a visual tool that enables you to compare the performance of different classifiers. The trajectory of the ROC-curve is derived by systematically varying the probability threshold which determines if a predicted probability is assigned to class 0 (loss player 1) or class 1 (success player 1). Use the predictions of the logistic regression model fitted in the previous task to construct a ROC-curve. In addition, answer the following questions:
+
+i. What is the model's predictive accuracy (i.e. proportion of correctly predicted data points)?
+ii. What is its *area under the receiver operator curve* (*ROC-AUC*)?
+iii. What is its *sensitivity* and *specificity* assuming a probability cutoff of 0.5? How can these two measures be interpreted?
+iv. Taking all of the above into account, how would you interpret the performance of the model in your own words?
+
+*Hint: The `yardstick` package provides some convenient functions that may help you solve this task. In case you decide to use the `yardstick::roc_curve()` function, consider carefully the `event_level` argument of the function to receive the desired output.*
+
+
+### Task 2.4
+
+Perform a logistic regression with only the training data set and compute the confusion matrix for the test set. What is the *accuracy*, *sensitivity* and *specificity*? How does the model performance compare to the previous task where the model is fitted on the whole data?
+
+
+### Task 2.6
+
+Perform a linear discriminant analysis (LDA) using `MASS::lda()` with only the training set and compute the confusion matrix for the test set. What is the *accuracy*, *sensitivity* and *specificity*? How does the model performance compare to the logit model in the previous task?
+
+*Note: In the online lecture you have learned that LDA is preferable if the classes are well-separated, the predictors follow a normal distribution and n is relatively small. Even though these requirements may not be fulfilled here, you may still use the method to compare its performance with the prior results.*
+
+
+### Task 2.7
+
+Suppose you know about both players’ quality in a specific match in the test set but you do not know the outcome `y`. According to LDA, how many match results (from the test data) can you predict with a probability larger than 80%? Put differently: in how many cases is the LDA more than 80% sure about the match outcome?
+
+\pagebreak
+
+Use the following `R` code to compute the misclassification error on the train and test set using k-Nearest-Neighbour (k-NN)  for all `k = 1, 2, ..., 30`. The code leverages the `map_dfc()` function from the `purrr` package to apply the `knn()` function from the `class` package to each element in `k` (i.e. the parameters 1 to 30) which yields a column-wise `tibble`. Note that `knn()` requires a data frame object as input to the arguments `train` and `test` and a vector of type `fct` as the input to the `cl` argument.
+
+*Note: Try to run the following code chunk piece by piece in order to grasp the logic underlying the computations.*
+
+```{r}
+# save named integer vector to the variable k
+k <-  seq(1, 30, 1) %>% 
+  purrr::set_names(1:30)
+
+# apply the knn() function to each element in k
+knn_mod_train <- purrr::map_dfc(
+  .x = k,
+  .f = ~ class::knn(
+    train = train_set_tn %>% dplyr::select(x1, x2),
+    test = train_set_tn %>% dplyr::select(x1, x2),
+    cl = train_set_tn$y,
+    k = .x
+  )) %>% 
+  # check for each prediction (and across all k) if it is unequal to the true class
+  dplyr::mutate(across(everything(), ~ (. != train_set_tn$y))) %>% 
+  # compute the misclassification error for each k
+  dplyr::summarize(across(everything(), mean)) %>%
+  # reshape into longer format
+  tidyr::pivot_longer(cols = everything(), names_to = "k", values_to = "train_error") %>% 
+  # format k as numeric
+  dplyr::mutate(across(k, as.numeric))
+
+knn_mod_train
+
+# repeat the same iteration to receive the test set errors
+knn_mod_test <- purrr::map_dfc(
+  .x = k,
+  .f = ~ class::knn(
+    train = train_set_tn %>% dplyr::select(x1, x2),
+    test = test_set_tn %>% dplyr::select(x1, x2),
+    cl = train_set_tn %>% dplyr::pull(y),
+    k = .x
+  )) %>% 
+  dplyr::mutate(across(everything(), ~ (. != test_set_tn$y))) %>% 
+  dplyr::summarize(across(everything(), mean)) %>% 
+  tidyr::pivot_longer(cols = everything(), names_to = "k", values_to = "test_error") %>% 
+  dplyr::mutate(across(k, as.numeric))
+
+knn_mod_test
+```
+
+In a more systematic way, the optimal `k` can be identified via CV (so-called hyperparamter tuning with `k` being the hyperparameter of interest). When conducting hyperparameter tuning the data is usually split into three different sets:
+
+- the *training set*, used for fitting the model,
+- the *validation set*, used for finding the optimal hyperparameter, and
+- the *test set*, used for computing a robust estimate of the misclassification error on unseen data.
+
+Consider the code below where the original training data is further divided into 5 disjunct folds using `vfold_cv()` from the `rsample` package.
+
+```{r}
+set.seed(2020)
+
+train_set_tn_cv <- train_set_tn %>%
+  rsample::vfold_cv(v = 5, repeats = 1)
+
+train_set_tn_cv
+```
+
+As you can see, the output of `vfold_cv()` is a `tibble` with an `id` column as well as a list column which contains the cross-validation `splits`. Each split contains 80% of the observations as training data (which can be accessed via `rsample::analysis()`) and 20% as validation data (which can be accessed via `rsample::assessment()`).
+
+Next, take the `train_set_tn_cv` data frame and add a new column that stores the hyperparameter values that are supposed to be used in the k-NN model. By using `unnest()`, the five splits are duplicated 30 times (once for each hyperparameter candidate `k`). 
+
+```{r}
+train_set_tn_cv <- train_set_tn_cv %>% 
+  dplyr::mutate(k = list(k)) %>% 
+  tidyr::unnest(cols = "k")
+
+train_set_tn_cv
+```
+
+Now, for each split fit 30 k-NN models, resulting in a total of 150 fitted models. Thus, use `purrr::map2()` to iterate over each of the 150 splits (`.x = splits`) and potential values for `k` (`.y = k`) and gather the predictions of the k-NN models in the `y_pred` column. Subsequently, add the true values for `y` to the `tibble` and store them in the `y_true` column.
+
+*Note: In a last step the code also discards columns no longer required for further analyses (e.g., the `splits` column). This is especially important in cases where you have to duplicate data which may limit free memory capacities quickly - especially when working with big data.*
+
+```{r}
+train_set_tn_cv <- train_set_tn_cv %>% 
+  # iterate over all splits and candidates for k and fit a k-NN model
+  # store the output (i.e. the predictions) in a column named y_pred
+  dplyr::mutate(
+    y_pred = purrr::map2(
+      .x = splits,
+      .y = k,
+      .f = ~ class::knn(
+        train = rsample::training(.x) %>% dplyr::select(x1, x2),
+        test = rsample::testing(.x) %>% dplyr::select(x1, x2),
+        cl = rsample::training(.x) %>% dplyr::pull(y),
+        k = .y
+      ))) %>% 
+  # add the true predictions back to the data frame
+  dplyr::mutate(
+    y_true = purrr::map(
+      .x = splits,
+      .f = ~ rsample::testing(.x) %>% dplyr::pull(y)
+    )) %>% 
+  # discard columns
+  dplyr::select(-splits)
+
+train_set_tn_cv
+```
+
+*Disclaimer: Grasping the inner workings of* `map_*()` *functions is not trivial at the beginning. Ideally, you can comprehend the code above in order to eventually be able to write `purrr`-iterations yourself.*
+
+Finally, one last computation is required:
+
+```{r}
+knn_mod_cv <- train_set_tn_cv %>% 
+  dplyr::mutate(
+    quantity = purrr::map2(
+      .x = y_pred,
+      .y = y_true,
+      .f = ~ (.x != .y) %>% mean)
+    ) %>% 
+  tidyr::unnest(cols = "quantity") %>% 
+  dplyr::select(-y_pred, -y_true)
+
+knn_mod_cv
+```
+
+
+### Task 2.8
+
+Look at the data frame `knn_mod_cv` in the previous code chunk. What is the meaning of the `quantity` column? For each `k`, compute the average CV error as well as its standard error using `dplyr::group_by()` and `dplyr::summarise()`. Which `k` corresponds to the smallest CV error? Which `k` corresponds to the smallest CV error that still satisfies the one-standard error-rule?
+
+*Hint: The resulting data frame should look similar to `knn_test_errors` and `knn_train_errors` containing the three columns: `k`, `cv_error_mean`, `cv_error_sd`. Otherwise, you may have to adjust variable names employed in the plot in task 2.9.*
+
+
+### Task 2.9
+
+Plot the misclassification errors using the code below. What can you say about the bias and variance of the predictions when `k` increases? Why does the CV misclassification error curve consistently exceed the test error curve?
+
+```{r, eval=F}
+ggplot2::ggplot() +
+  # plot train errors
+  geom_point(aes(x = k, y = train_error, color = "train_error"), knn_mod_train) +
+  geom_line(aes(x = k, y = train_error, color = "train_error"), knn_mod_train) +
+  # plot test errors
+  geom_point(aes(x = k, y = test_error, color = "test_error"), knn_mod_test) +
+  geom_line(aes(x = k, y = test_error, color = "test_error"), knn_mod_test) +
+  # plot cv errors
+  geom_point(aes(x = k, y = cv_error_mean, color = "cv_error_mean"), knn_mod_cv) +
+  geom_line(aes(x = k, y = cv_error_mean, color = "cv_error_mean"), knn_mod_cv) +
+  # plot cv error uncertainty
+  geom_errorbar(
+    aes(
+      x = k, y = cv_error_mean,
+      ymin = cv_error_mean - cv_error_sd, ymax = cv_error_mean + cv_error_sd
+    ),
+    knn_mod_cv, width = .5) +
+  labs(x = "Number of neighbors", y = "Misclassification error", color = "Legend") +
+  theme_classic()
+```
+
+
+### Task 2.10
+
+Run the code below and briefly explain the graph that it creates.
+
+```{r}
+data_grid <- tidyr::expand_grid(
+  x1 = seq(min(test_set_tn$x1), max(test_set_tn$x1), length = 100),
+  x2 = seq(min(test_set_tn$x2), max(test_set_tn$x2), length = 100))
+
+y_hat_knn <- class::knn(
+  train = train_set_tn %>% dplyr::select(x1, x2),
+  test = data_grid,
+  cl = train_set_tn %>% dplyr::pull(y),
+  k = 30)
+
+data_grid %>% 
+  dplyr::mutate(y_hat = y_hat_knn) %>% 
+  ggplot2::ggplot(aes(x = x1, y = x2, z = as.integer(y_hat))) + 
+    geom_point(aes(color = y_hat), shape = ".") +
+    geom_point(aes(x = x1, y = x2, z = NULL, color = y), data = test_set_tn) +
+    geom_contour(colour = "black", size = .5, bins = 1, lty = "dashed") +
+    scale_color_manual(values = c("blue4", "darkorange1")) +
+    labs(title = "Nearest Neighbour Classification (k = 30)") +
+    theme_classic() +
+    theme(legend.title = element_blank())
+```
+
+
+### Task 2.11
+
+Run the code again, but choose `k = 1`, `k = 50` and `k = 300` in the first line. Compare the graphs. Which of these three models is the most flexible? Explain in one sentence what happens if you would set `k = 500`.
+
+
+\pagebreak
+
+# Task 3: Cross-Validation
+
+In this exercise, you will work with the `Carseats` data set from the `ISLR` package. First, you will try to predict the unit sales at each location using multiple linear regression, and estimate the test error of this regression model using the validation set approach.
+
+```{r}
+data(Carseats, package = "ISLR")
+
+Carseats %>% 
+  tibble::as_tibble()
+```
+
+
+### Task 3.1
+
+Fit a multiple linear regression model, called `lin_reg_mod`, that uses `Price`, `Urban`, and `US` to predict `Sales`. Print the results using `summary()`.
+
+
+### Task 3.2
+
+Estimate the test error of this model using the validation set approach. In order to do this, perform the following steps:
+
+i. Split the data set into a training set and a validation set, each encompassing half of the data. Use `set.seed(2020)`. \break
+*Hint: You may use the `initial_split()` function from the `rsample` package.*
+ii. Fit a multiple linear regression model `lin_reg_mod_train` using only the training observations. Briefly compare the results with `lin_reg_mod` (regarding the estimates, standard errors and p-values).
+iii. Predict the response for the 200 test set observations and calculate the mean squared error (MSE).
+iv. How does your answer to iii. change if you use the random seeds 2018 or 2019 instead of 2020 to split the data set?
+v. Compute the LOOCV estimate for the MSE using the `cv.glm()` function from the `boot` package. \break
+*Hint: The mean squared error (MSE) can be extracted from the resulting list via `$delta`.*
+
+
+### Task 3.3
+
+Use the `regsubsets()` function from the `leaps` package to find the best subset consisting of three predictors to estimate `Sales`, excluding `ShelveLoc`. Apply the function in a way to conduct *stepwise forward selection*. What are the three predictors selected by this approach? Fit a multiple linear regression using these three predictors and compute the LOOCV estimate for the MSE. Compare with your answer to *Task 3.2 v.* Can you explain the difference?
+
+
+### Task 3.4
+
+Compute the mean of the response (`Sales`). In a next step, you want to understand the potential distribution of the mean. For this purpose, create 20 bootstrapped replicates of the data, using random seed 2020 (`set.seed(2020)`). Then apply the mean function to each bootstrapped replicate. Enter the command 20 times and write down the range of the mean, i.e. the lowest and the largest number.
+
+*Hint: You may refer to the `bootstraps()` function from the `rsample` or to the `boot()` function from the `boot` package. If you are unsure how to apply the function, you may study the 'Examples' section on the help page of the respective function (e.g., by calling `help(bootstraps)`).*
+
+
+### Task 3.5
+
+Repeat the above analysis using `boot()` and `set.seed(2020)`. What is the 99% confidence interval for the mean?
+
+*Hint: A quick Google search query with "R boot compute mean" may help you find a good solution for implementing the given task.*
+
+
+\pagebreak
+
+# Task 4: Linear Model Selection and Regularization
+
+In this final exercise, you will predict diamond prices using the `diamonds` data set from the `ggplot2` package. The diamonds data set consists of:
+
+- `price` (in US dollars) - which will be the response,
+
+and quality information (9 predictors) for around 54,000 diamonds. There are four C’s of diamond quality:
+
+- `carat` (weight),
+- `cut` (quality of the cut: Fair/Good/Very Good/Premium/Ideal),
+- `colour` (from worst J to best D) and
+- `clarity` (from worst to best: I1, SI1, SI2, VS1, VVS1, VVS2, IF).
+
+In addition, there are five physical measurements:
+
+- `depth` (total depth percentage, calculated from x, y and z),
+- `table` (width of top of diamond relative to widest point),
+- `x` (length in mm),
+- `y` (width in mm), and
+- `z` (depth in mm).
+
+```{r}
+data(diamonds, package = "ggplot2")
+
+diamonds
+```
+
+To make things easier (in terms of runtime), the following code chunk reduces the data to a tenth of its size.
+
+```{r}
+set.seed(2020)
+
+diamonds <- diamonds %>% 
+  slice_sample(n = nrow(.) / 10)
+
+diamonds
+```
+
+Your aim will be to predict `price`, based on some or all of the predictors. Ideally, you want to understand which of the predictors are important in estimating the price and how the predictors are related to the price.
+
+
+### Task 4.1
+
+Get an overview of the `diamonds` data. What are the three highest prices in the data set? How many carats do those diamonds weigh? What is the mean weight? Which color is the most prevalent? Plot `price` against `carat` as well as their logged forms against each other using `ggplot()`.
+
+
+### Task 4.2
+
+Perform forward and backward stepwise selection to choose the best subset of predictors for `log_price`. Compare the two results qualitatively as well as visually (by plotting the fitted objects using `plot()`). Using adjusted R² as decision criterion, how large is the best subset from the backward stepwise selection?
+
+*Hint: Adjusted R² values can be extracted from the fitted model using `summary(model)$adjr2`.*
+
+
+### Task 4.3
+
+What are the main differences between using adjusted R² for model selection and using cross-validation (with mean squared test error, i.e. MSE)?
+
+
+### Task 4.4
+
+Use Lasso and Ridge regression on the data to predict the `log_price`. Therefore, employ the `cv.glmnet()` function from the `glmnet` package and fit the models using the MSE as loss function and `nfolds = 5` as the number of folds. What is the optimal hyperparameter lambda and the corresponding MSE in both cases? Which predictors are selected by the optimal Lasso model?
+
+*Hint:  Unfortunately, you can not feed a data frame object to the first argument `x` of `cv.glmnet()`. Instead, the function requires a predictor matrix as input. To convert the `diamonds` data frame into a matrix object you may use the `model.matrix` function.*
+
+
+## Sources
+Some of the exercises are based on those from other machine/statistical learning courses, i.e. by the Norwegian University of Science and Technology (NTNU) and the Albert-Ludwigs-Universität Freiburg.
